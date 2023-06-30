@@ -1,0 +1,19 @@
+{
+  "name": "fcm-v1-http2",
+  "version": "1.0.0",
+  "description": "Send multicast notifications using HTTP/2 multiplexing through the FCM HTTP v1 API.",
+  "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eladnava/fcm-v1-http2.git"
+  },
+  "author": "Elad Nava <eladnava@gmail.com> (https://eladnava.com)",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/eladnava/fcm-v1-http2/issues"
+  },
+  "homepage": "https://github.com/eladnava/fcm-v1-http2#readme",
+  "dependencies": {
+    "googleapis": "^120.0.0"
+  }
+}
