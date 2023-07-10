@@ -166,8 +166,8 @@ function sendRequest(client, device, message, projectId, accessToken, totalReque
             }
         }
         catch (err) {
-            // Retry up to 3 times
-            if (tries <= 3) {
+            // Retry up to 3 times (as long as the HTTP2 session is active)
+            if (tries <= 3 && !client.destroyed) {
                 // Decrement completed requests to avoid closure of HTTP/2 client
                 client.completedRequests--;
 
