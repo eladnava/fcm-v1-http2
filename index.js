@@ -3,17 +3,19 @@ const http2 = require('http2');
 const { google } = require('googleapis');
 
 // Define default HTTP/2 multiplexing concurrency (max number of sessions and max number of concurrent streams per session)
-const fcmv1Api = 'https://fcm.googleapis.com', defaultMaxConcurrentConnections = 10, defaultMaxConcurrentStreamsAllowed = 100;
+let config = {}, fcmv1Api = 'https://fcm.googleapis.com', defaultMaxConcurrentConnections = 10, defaultMaxConcurrentStreamsAllowed = 100;
 
 // Package constructor
 function Client(options) {
-    // Set options as instance members
-    this.serviceAccount = options.serviceAccount;
-    this.maxConcurrentConnections = options.maxConcurrentConnections || defaultMaxConcurrentConnections;
-    this.maxConcurrentStreamsAllowed = options.maxConcurrentStreamsAllowed || defaultMaxConcurrentStreamsAllowed;
+    // Set global client object
+    config = {
+        serviceAccount: options.serviceAccount,
+        maxConcurrentConnections: options.maxConcurrentConnections || defaultMaxConcurrentConnections,
+        maxConcurrentStreamsAllowed: options.maxConcurrentStreamsAllowed || defaultMaxConcurrentStreamsAllowed
+    };
 
     // No service account?
-    if (!this.serviceAccount) {
+    if (!config.serviceAccount) {
         throw new Error('Please provide the service account JSON configuration file.');
     }
 }
@@ -23,11 +25,11 @@ Client.prototype.sendMulticast = function sendMulticast(message, tokens) {
     // Promisify method
     return new Promise((resolve, reject) => {
         // Calculate max devices per batch, and prepare batches array
-        let batchLimit = Math.ceil(tokens.length / this.maxConcurrentConnections), tokenBatches = [];
+        let batchLimit = Math.ceil(tokens.length / config.maxConcurrentConnections), tokenBatches = [];
 
         // Use just one batch/HTTP2 connection if batch limit is less than maxConcurrentStreamsAllowed
-        if (batchLimit <= this.maxConcurrentStreamsAllowed) {
-            batchLimit = this.maxConcurrentStreamsAllowed;
+        if (batchLimit <= config.maxConcurrentStreamsAllowed) {
+            batchLimit = config.maxConcurrentStreamsAllowed;
         }
 
         // Traverse tokens and split them up into batches of X devices each  
@@ -38,15 +40,23 @@ Client.prototype.sendMulticast = function sendMulticast(message, tokens) {
         // Keep track of unregistered device tokens
         let unregisteredTokens = [];
 
+        // Get Firebase project ID from service account credentials
+        let projectId = config.serviceAccount.project_id;
+
+        // Ensure we have a project ID
+        if (!projectId) {
+            return reject(new Error('Unable to determine Firebase Project ID from service account file.'));
+        }
+
         // Get OAuth2 token
-        getAccessToken(this.serviceAccount).then(function (accessToken) {
+        getAccessToken(config.serviceAccount).then((accessToken) => {
             // Count batches to determine when all notifications have been sent
             let done = 0;
 
             // Send notification using HTTP/2 multiplexing
             for (let tokenBatch of tokenBatches) {
                 // Send notification to current token batch
-                processBatch.call(this, message, tokenBatch, this.serviceAccount, accessToken).then((unregisteredTokensList) => {
+                processBatch(message, tokenBatch, projectId, accessToken).then((unregisteredTokensList) => {
                     // Add unregistred tokens (if any)
                     if (unregisteredTokensList.length > 0)
                         unregisteredTokens.push(unregisteredTokensList);
@@ -63,7 +73,7 @@ Client.prototype.sendMulticast = function sendMulticast(message, tokens) {
                     reject(err);
                 });
             }
-        }.bind(this)).catch((err) => {
+        }).catch((err) => {
             // Failed to generate OAuth2 token
             // most likely due to invalid credentials provided
             reject(err);
@@ -72,20 +82,12 @@ Client.prototype.sendMulticast = function sendMulticast(message, tokens) {
 }
 
 // Sends notifications to a batch of tokens using HTTP/2
-function processBatch(message, devices, serviceAccount, accessToken) {
+function processBatch(message, devices, projectId, accessToken) {
     // Promisify method
-    return new Promise(function (resolve, reject) {
-        // Get Firebase project ID from service account credentials
-        let projectId = serviceAccount.project_id;
-
-        // Ensure we have a project ID
-        if (!projectId) {
-            return reject(new Error('Unable to determine Firebase Project ID from service account file.'));
-        }
-
+    return new Promise((resolve, reject) => {
         // Create an HTTP2 client and connect to FCM API
         let client = http2.connect(fcmv1Api, {
-            peerMaxConcurrentStreams: this.maxConcurrentConnections
+            peerMaxConcurrentStreams: config.maxConcurrentConnections
         });
 
         // Log connection errors
@@ -102,10 +104,10 @@ function processBatch(message, devices, serviceAccount, accessToken) {
         client.unregisteredTokens = [];
 
         // Use async/eachLimit to iterate over device tokens
-        async.eachLimit(devices, this.maxConcurrentStreamsAllowed, function (device, doneCallback) {
+        async.eachLimit(devices, config.maxConcurrentStreamsAllowed, (device, doneCallback) => {
             // Create a HTTP/2 request per device token
             sendRequest(client, device, message, projectId, accessToken, doneCallback, 0);
-        }, function (err) {
+        }, (err) => {
             // All requests completed, close the HTTP2 client
             client.close();
 
@@ -117,7 +119,7 @@ function processBatch(message, devices, serviceAccount, accessToken) {
             // Resolve the promise with list of unregistered tokens
             resolve(client.unregisteredTokens);
         });
-    }.bind(this));
+    });
 }
 
 // Sends a single notification over an existing HTTP/2 client
@@ -159,7 +161,7 @@ function sendRequest(client, device, message, projectId, accessToken, doneCallba
     let args = arguments;
 
     // Response received in full
-    request.on('end', function () {
+    request.on('end', () => {
         try {
             // Convert response body to JSON object
             let response = JSON.parse(data);
@@ -169,7 +171,7 @@ function sendRequest(client, device, message, projectId, accessToken, doneCallba
                 // App uninstall?
                 if (response.error.details && response.error.details[0].errorCode === 'UNREGISTERED') {
                     // Add to unregistered tokens list
-                    client.unregisteredTokens.push(this);
+                    client.unregisteredTokens.push(device);
                 }
                 else {
                     // Call async done callback with error
@@ -181,9 +183,15 @@ function sendRequest(client, device, message, projectId, accessToken, doneCallba
             doneCallback();
         }
         catch (err) {
-            // Retry up to 3 times (as long as the HTTP2 session is active)
-            if (tries <= 3 && !client.destroyed) {
-                // Retry request in 5 seconds
+            // Retry up to 3 times
+            if (tries <= 3) {
+                // If HTTP2 session destroyed, open a new one
+                if (client.destroyed) {
+                    // Crate new HTTP/2 session just for this failed device
+                    return processBatch(message, [device], projectId, accessToken).finally(doneCallback);
+                }
+                
+                // Retry request using same HTTP2 session in 5 seconds
                 return setTimeout(() => { sendRequest.apply(this, args) }, 5 * 1000);;
             }
 
@@ -193,7 +201,7 @@ function sendRequest(client, device, message, projectId, accessToken, doneCallba
             // Even if request failed, mark request as completed as we've already retried 3 times
             return doneCallback(err);
         }
-    }.bind(device));
+    });
 
     // Log request errors
     request.on('error', (err) => {
