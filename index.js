@@ -92,6 +92,13 @@ function processBatch(message, devices, projectId, accessToken) {
 
         // Log connection errors
         client.on('error', (err) => {
+            // Connection reset?
+            if (err.message.includes('ECONNRESET')) {
+                // Log temporary connection errors to console (retry mechanism inside sendRequest will take care of retrying)
+                return console.error('FCM HTTP2 Error', err);
+            }
+            
+            // Throw connection error
             reject(err);
         });
 
