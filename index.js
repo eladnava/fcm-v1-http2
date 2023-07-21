@@ -2,7 +2,7 @@ const http2 = require('http2');
 const { google } = require('googleapis');
 
 // Define default HTTP/2 multiplexing concurrency (max number of sessions and max number of concurrent streams per session)
-const defaultMaxConcurrentConnections = 10, defaultMaxConcurrentStreamsAllowed = 100;
+const fcmv1Api = 'https://fcm.googleapis.com', defaultMaxConcurrentConnections = 10, defaultMaxConcurrentStreamsAllowed = 100;
 
 // Package constructor
 function Client(options) {
@@ -83,7 +83,7 @@ function processBatch(message, devices, serviceAccount, accessToken) {
         }
 
         // Create an HTTP2 client and connect to FCM API
-        let client = http2.connect('https://fcm.googleapis.com');
+        let client = http2.connect(fcmv1Api);
 
         // Log connection errors
         client.on('error', (err) => {
