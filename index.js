@@ -38,14 +38,14 @@ Client.prototype.sendMulticast = function sendMulticast(message, tokens) {
         let unregisteredTokens = [];
 
         // Get OAuth2 token
-        getAccessToken(this.serviceAccount).then((accessToken) => {
+        getAccessToken(this.serviceAccount).then(function (accessToken) {
             // Count batches to determine when all notifications have been sent
             let done = 0;
 
             // Send notification using HTTP/2 multiplexing
             for (let tokenBatch of tokenBatches) {
                 // Send notification to current token batch
-                processBatch(message, tokenBatch, this.serviceAccount, accessToken).then((unregisteredTokensList) => {
+                processBatch.call(this, message, tokenBatch, this.serviceAccount, accessToken).then((unregisteredTokensList) => {
                     // Add unregistred tokens (if any)
                     if (unregisteredTokensList.length > 0)
                         unregisteredTokens.push(unregisteredTokensList);
@@ -62,7 +62,7 @@ Client.prototype.sendMulticast = function sendMulticast(message, tokens) {
                     reject(err);
                 });
             }
-        }).catch((err) => {
+        }.bind(this)).catch((err) => {
             // Failed to generate OAuth2 token
             // most likely due to invalid credentials provided
             reject(err);
@@ -72,6 +72,9 @@ Client.prototype.sendMulticast = function sendMulticast(message, tokens) {
 
 // Sends notifications to a batch of tokens using HTTP/2
 function processBatch(message, devices, serviceAccount, accessToken) {
+    // Store maxConcurrentConnections for later
+    let maxConcurrentConnections = this.maxConcurrentConnections;
+
     // Promisify method
     return new Promise((resolve, reject) => {
         // Get Firebase project ID from service account credentials
@@ -83,7 +86,9 @@ function processBatch(message, devices, serviceAccount, accessToken) {
         }
 
         // Create an HTTP2 client and connect to FCM API
-        let client = http2.connect(fcmv1Api);
+        let client = http2.connect(fcmv1Api, {
+            peerMaxConcurrentStreams: maxConcurrentConnections
+        });
 
         // Log connection errors
         client.on('error', (err) => {
