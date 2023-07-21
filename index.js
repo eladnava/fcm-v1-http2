@@ -157,6 +157,27 @@ function sendRequest(client, device, message, projectId, accessToken, doneCallba
         data += chunk;
     });
 
+    // Define error handler
+    var errorHandler = function (err) {
+        // Retry up to 3 times
+        if (tries <= 3) {
+            // If HTTP2 session destroyed, open a new one
+            if (client.destroyed) {
+                // Crate new HTTP/2 session just for this failed device
+                return processBatch(message, [device], projectId, accessToken).finally(doneCallback);
+            }
+
+            // Retry request using same HTTP2 session in 5 seconds
+            return setTimeout(() => { sendRequest.apply(this, args) }, 5 * 1000);
+        }
+
+        // Log response data in error
+        err.data = data;
+
+        // Even if request failed, mark request as completed as we've already retried 3 times
+        doneCallback(err);
+    }
+
     // Keep track of called args for retry mechanism
     let args = arguments;
 
@@ -183,30 +204,15 @@ function sendRequest(client, device, message, projectId, accessToken, doneCallba
             doneCallback();
         }
         catch (err) {
-            // Retry up to 3 times
-            if (tries <= 3) {
-                // If HTTP2 session destroyed, open a new one
-                if (client.destroyed) {
-                    // Crate new HTTP/2 session just for this failed device
-                    return processBatch(message, [device], projectId, accessToken).finally(doneCallback);
-                }
-                
-                // Retry request using same HTTP2 session in 5 seconds
-                return setTimeout(() => { sendRequest.apply(this, args) }, 5 * 1000);;
-            }
-
-            // Log response data in error
-            err.data = data;
-
-            // Even if request failed, mark request as completed as we've already retried 3 times
-            return doneCallback(err);
+            // Invoke error handler with retry mechanism
+            errorHandler(err);
         }
     });
 
     // Log request errors
     request.on('error', (err) => {
-        // Call async done callback with parse error
-        doneCallback(err);
+        // Invoke error handler with retry mechanism
+        errorHandler(err);
     });
 
     // Increment tries
