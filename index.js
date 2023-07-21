@@ -183,8 +183,8 @@ function sendRequest(client, device, message, projectId, accessToken, doneCallba
         catch (err) {
             // Retry up to 3 times (as long as the HTTP2 session is active)
             if (tries <= 3 && !client.destroyed) {
-                // Retry request
-                return sendRequest.apply(this, args);
+                // Retry request in 5 seconds
+                return setTimeout(() => { sendRequest.apply(this, args) }, 5 * 1000);;
             }
 
             // Log response data in error
