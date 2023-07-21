@@ -157,10 +157,21 @@ function sendRequest(client, device, message, projectId, accessToken, doneCallba
         data += chunk;
     });
 
+    // Keep track of whether we are already retrying this method invocation
+    let retrying = false;
+
     // Define error handler
-    var errorHandler = function (err) {
+    let errorHandler = function (err) {
         // Retry up to 3 times
         if (tries <= 3) {
+            // Avoid retrying twice for the same error
+            if (retrying) {
+                return;
+            }
+
+            // Keep track of whether we are already retrying in this context
+            retrying = true;
+
             // If HTTP2 session destroyed, open a new one
             if (client.destroyed) {
                 // Crate new HTTP/2 session just for this failed device
