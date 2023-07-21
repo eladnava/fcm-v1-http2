@@ -1,3 +1,4 @@
+const async = require('async');
 const http2 = require('http2');
 const { google } = require('googleapis');
 
@@ -72,11 +73,8 @@ Client.prototype.sendMulticast = function sendMulticast(message, tokens) {
 
 // Sends notifications to a batch of tokens using HTTP/2
 function processBatch(message, devices, serviceAccount, accessToken) {
-    // Store maxConcurrentConnections for later
-    let maxConcurrentConnections = this.maxConcurrentConnections;
-
     // Promisify method
-    return new Promise((resolve, reject) => {
+    return new Promise(function (resolve, reject) {
         // Get Firebase project ID from service account credentials
         let projectId = serviceAccount.project_id;
 
@@ -87,7 +85,7 @@ function processBatch(message, devices, serviceAccount, accessToken) {
 
         // Create an HTTP2 client and connect to FCM API
         let client = http2.connect(fcmv1Api, {
-            peerMaxConcurrentStreams: maxConcurrentConnections
+            peerMaxConcurrentStreams: this.maxConcurrentConnections
         });
 
         // Log connection errors
@@ -100,21 +98,30 @@ function processBatch(message, devices, serviceAccount, accessToken) {
             reject(err);
         });
 
-        // Keep track of completed requests to determine completion
-        client.completedRequests = 0;
-
         // Keep track of unregistered device tokens
         client.unregisteredTokens = [];
 
-        // Send a HTTP/2 request per device
-        for (let device of devices) {
-            sendRequest(client, device, message, projectId, accessToken, devices.length, resolve, reject, 0);
-        }
-    });
+        // Use async/eachLimit to iterate over device tokens
+        async.eachLimit(devices, this.maxConcurrentStreamsAllowed, function (device, doneCallback) {
+            // Create a HTTP/2 request per device token
+            sendRequest(client, device, message, projectId, accessToken, doneCallback, 0);
+        }, function (err) {
+            // All requests completed, close the HTTP2 client
+            client.close();
+
+            // Reject on error
+            if (err) {
+                return reject(err);
+            }
+
+            // Resolve the promise with list of unregistered tokens
+            resolve(client.unregisteredTokens);
+        });
+    }.bind(this));
 }
 
 // Sends a single notification over an existing HTTP/2 client
-function sendRequest(client, device, message, projectId, accessToken, totalRequests, resolve, reject, tries) {
+function sendRequest(client, device, message, projectId, accessToken, doneCallback, tries) {
     // Create a HTTP/2 request per device token
     let request = client.request({
         ':method': 'POST',
@@ -165,17 +172,17 @@ function sendRequest(client, device, message, projectId, accessToken, totalReque
                     client.unregisteredTokens.push(this);
                 }
                 else {
-                    // Reject promise with error
-                    reject(response.error);
+                    // Call async done callback with error
+                    return doneCallback(response.error);
                 }
             }
+
+            // Mark request as completed
+            doneCallback();
         }
         catch (err) {
             // Retry up to 3 times (as long as the HTTP2 session is active)
             if (tries <= 3 && !client.destroyed) {
-                // Decrement completed requests to avoid closure of HTTP/2 client
-                client.completedRequests--;
-
                 // Retry request
                 return sendRequest.apply(this, args);
             }
@@ -183,27 +190,15 @@ function sendRequest(client, device, message, projectId, accessToken, totalReque
             // Log response data in error
             err.data = data;
 
-            // Throw parse error
-            return reject(err);
-        }
-        finally {
-            // Even if parsing fails, mark request as completed
-            client.completedRequests++;
-
-            // Done with all requests for this batch?
-            if (client.completedRequests === totalRequests) {
-                // Close the HTTP2 client
-                client.close();
-
-                // Resolve the promise with list of unregistered tokens
-                resolve(client.unregisteredTokens);
-            }
+            // Even if request failed, mark request as completed as we've already retried 3 times
+            return doneCallback(err);
         }
     }.bind(device));
 
     // Log request errors
     request.on('error', (err) => {
-        reject(err);
+        // Call async done callback with parse error
+        doneCallback(err);
     });
 
     // Increment tries
