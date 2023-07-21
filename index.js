@@ -167,8 +167,8 @@ function sendRequest(client, device, message, projectId, accessToken, doneCallba
                 return processBatch(message, [device], projectId, accessToken).finally(doneCallback);
             }
 
-            // Retry request using same HTTP2 session in 5 seconds
-            return setTimeout(() => { sendRequest.apply(this, args) }, 5 * 1000);
+            // Retry request using same HTTP2 session in 10 seconds
+            return setTimeout(() => { sendRequest.apply(this, args) }, 10 * 1000);
         }
 
         // Log response data in error
