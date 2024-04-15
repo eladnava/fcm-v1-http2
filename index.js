@@ -202,6 +202,11 @@ function sendRequest(client, device, message, projectId, accessToken, doneCallba
     // Response received in full
     request.on('end', () => {
         try {
+            // Server-side error? (may be returned as HTML, so search text explicitly before try parsing from JSON)
+            if (data.toLowerCase().includes('server error')) {
+                return errorHandler(new Error('Internal Server Error'));
+            }
+            
             // Convert response body to JSON object
             let response = JSON.parse(data);
 
