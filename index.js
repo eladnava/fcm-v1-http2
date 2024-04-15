@@ -205,10 +205,12 @@ function sendRequest(client, device, message, projectId, accessToken, doneCallba
             // Convert response body to JSON object
             let response = JSON.parse(data);
 
+            // Extract status code from JSON response object
             let statusCode = response.statusCode ?? response.status;
-
+            // Status code found?
             if (statusCode) {
-                if (statusCode > 500) { // FCM service temporarily unavailable
+                // Server-side error?
+                if (statusCode >= 500) {
                     // Retry request using same HTTP2 session in 10 seconds
                     return setTimeout(() => { sendRequest.apply(this, args) }, 10 * 1000);
                 }
