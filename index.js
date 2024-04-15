@@ -205,16 +205,21 @@ function sendRequest(client, device, message, projectId, accessToken, doneCallba
             // Convert response body to JSON object
             let response = JSON.parse(data);
 
+            let statusCode = response.statusCode ?? response.status;
+
+            if (statusCode) {
+                if (statusCode > 500) { // FCM service temporarily unavailable
+                    // Retry request using same HTTP2 session in 10 seconds
+                    return setTimeout(() => { sendRequest.apply(this, args) }, 10 * 1000);
+                }
+            }
+            
             // Error?
             if (response.error) {
                 // App uninstall?
                 if (response.error.details && response.error.details[0].errorCode === 'UNREGISTERED') {
                     // Add to unregistered tokens list
                     client.unregisteredTokens.push(device);
-                } 
-                else if (response.status > 500) { // FCM service temporarily unavailable
-                    // Retry request using same HTTP2 session in 10 seconds
-                    return setTimeout(() => { sendRequest.apply(this, args) }, 10 * 1000);
                 }
                 else {
                     // Call async done callback with error
