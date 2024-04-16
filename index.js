@@ -181,7 +181,7 @@ function sendRequest(client, device, message, projectId, accessToken, doneCallba
 
             // If HTTP2 session destroyed, open a new one
             if (client.destroyed) {
-                // Crate new HTTP/2 session just for this failed device
+                // Create new HTTP/2 session just for this failed device
                 return processBatch(message, [device], projectId, accessToken).finally(doneCallback);
             }
 
