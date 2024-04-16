@@ -202,9 +202,26 @@ function sendRequest(client, device, message, projectId, accessToken, doneCallba
     // Response received in full
     request.on('end', () => {
         try {
+            // Server-side error? (may be returned as HTML, so search text explicitly before try parsing from JSON)
+            if (data.toLowerCase().includes('server error')) {
+                return errorHandler(new Error('Internal Server Error'));
+            }
+            
             // Convert response body to JSON object
             let response = JSON.parse(data);
 
+            // Extract status code from JSON response object
+            let statusCode = response.statusCode ?? response.status;
+            
+            // Status code found?
+            if (statusCode) {
+                // Server-side error?
+                if (statusCode >= 500) {
+                    // Retry request using same HTTP2 session in 10 seconds
+                    return errorHandler(new Error(statusCode + 'Internal Server Error'));
+                }
+            }
+            
             // Error?
             if (response.error) {
                 // App uninstall?
