@@ -224,8 +224,9 @@ function sendRequest(client, device, message, projectId, accessToken, doneCallba
             
             // Error?
             if (response.error) {
-                // App uninstall?
-                if (response.error.details && response.error.details[0].errorCode === 'UNREGISTERED') {
+                // App uninstall or invalid token?
+                if ((response.error.details && response.error.details[0].errorCode === 'UNREGISTERED') ||
+                    (response.error.code === 400 && response.error.status === 'INVALID_ARGUMENT')) {
                     // Add to unregistered tokens list
                     client.unregisteredTokens.push(device);
                 }
