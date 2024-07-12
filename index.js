@@ -226,7 +226,7 @@ function sendRequest(client, device, message, projectId, accessToken, doneCallba
             if (response.error) {
                 // App uninstall or invalid token?
                 if ((response.error.details && response.error.details[0].errorCode === 'UNREGISTERED') ||
-                    (response.error.code === 400 && response.error.status === 'INVALID_ARGUMENT')) {
+                    (response.error.code === 400 && response.error.status === 'INVALID_ARGUMENT' && response.error.message.includes('not a valid FCM registration token'))) {
                     // Add to unregistered tokens list
                     client.unregisteredTokens.push(device);
                 }
