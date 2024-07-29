@@ -59,7 +59,7 @@ Client.prototype.sendMulticast = function sendMulticast(message, tokens) {
                 processBatch(message, tokenBatch, projectId, accessToken).then((unregisteredTokensList) => {
                     // Add unregistred tokens (if any)
                     if (unregisteredTokensList.length > 0)
-                        unregisteredTokens.push(unregisteredTokensList);
+                        unregisteredTokens.push(...unregisteredTokensList);
 
                     // Done with this batch
                     done++;
