@@ -87,7 +87,7 @@ function processBatch(message, devices, projectId, accessToken) {
     return new Promise((resolve, reject) => {
         // Create an HTTP2 client and connect to FCM API
         let client = http2.connect(fcmv1Api, {
-            peerMaxConcurrentStreams: config.maxConcurrentConnections
+            peerMaxConcurrentStreams: config.maxConcurrentStreamsAllowed
         });
 
         // Log connection errors
