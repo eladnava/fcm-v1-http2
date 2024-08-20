@@ -110,8 +110,8 @@ function processBatch(message, devices, projectId, accessToken) {
         // Keep track of unregistered device tokens
         client.unregisteredTokens = [];
 
-        // Use async/eachLimit to iterate over device tokens
-        async.eachLimit(devices, config.maxConcurrentStreamsAllowed, (device, doneCallback) => {
+        // Use async/each to iterate over device tokens
+        async.each(devices, (device, doneCallback) => {
             // Create a HTTP/2 request per device token
             sendRequest(client, device, message, projectId, accessToken, doneCallback, 0);
         }, (err) => {
