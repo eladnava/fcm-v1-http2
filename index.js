@@ -3,7 +3,7 @@ const http2 = require('http2');
 const { google } = require('googleapis');
 
 // Define default HTTP/2 multiplexing concurrency (max number of sessions and max number of concurrent streams per session)
-let config = {}, fcmv1Api = 'https://fcm.googleapis.com', defaultMaxConcurrentConnections = 10, defaultMaxConcurrentStreamsAllowed = 100;
+let config = {}, fcmv1Api = 'https://fcm.googleapis.com', defaultMaxConcurrentConnections = 10, defaultMaxConcurrentStreamsAllowed = 100, retryClient;
 
 // Package constructor
 function Client(options) {
@@ -81,34 +81,42 @@ Client.prototype.sendMulticast = function sendMulticast(message, tokens) {
     });
 }
 
+function createNewHttp2Client() {
+    // Create an HTTP2 client and connect to FCM API
+    let client = http2.connect(fcmv1Api, {
+        peerMaxConcurrentStreams: config.maxConcurrentStreamsAllowed
+    });
+
+    // Log connection errors
+    client.on('error', (err) => {
+        // Connection reset?
+        if (err.message.includes('ECONNRESET')) {
+            // Log temporary connection errors to console (retry mechanism inside sendRequest will take care of retrying)
+            return console.error('FCM HTTP2 Error', err);
+        }
+        
+        // Throw connection error
+        reject(err);
+    });
+
+    // Log socket errors
+    client.on('socketError', (err) => {
+        reject(err);
+    });
+
+    // Keep track of unregistered device tokens
+    client.unregisteredTokens = [];
+
+    // All done
+    return client;
+}
+
 // Sends notifications to a batch of tokens using HTTP/2
 function processBatch(message, devices, projectId, accessToken) {
     // Promisify method
     return new Promise((resolve, reject) => {
-        // Create an HTTP2 client and connect to FCM API
-        let client = http2.connect(fcmv1Api, {
-            peerMaxConcurrentStreams: config.maxConcurrentStreamsAllowed
-        });
-
-        // Log connection errors
-        client.on('error', (err) => {
-            // Connection reset?
-            if (err.message.includes('ECONNRESET')) {
-                // Log temporary connection errors to console (retry mechanism inside sendRequest will take care of retrying)
-                return console.error('FCM HTTP2 Error', err);
-            }
-            
-            // Throw connection error
-            reject(err);
-        });
-
-        // Log socket errors
-        client.on('socketError', (err) => {
-            reject(err);
-        });
-
-        // Keep track of unregistered device tokens
-        client.unregisteredTokens = [];
+        // Create new HTTP/2 client for this batch
+        var client = createNewHttp2Client();
 
         // Use async/each to iterate over device tokens
         async.each(devices, (device, doneCallback) => {
@@ -131,6 +139,27 @@ function processBatch(message, devices, projectId, accessToken) {
 
 // Sends a single notification over an existing HTTP/2 client
 function sendRequest(client, device, message, projectId, accessToken, doneCallback, tries) {
+    // HTTP2 client destroyed?
+    if (!client || client.closed || client.destroyed) {
+        // Invalid retry client?
+        if (!retryClient || retryClient.closed || retryClient.destroyed) {
+            try {
+                // Try closing old client & freeing up resources
+                retryClient.close();
+                retryClient.destroy();
+            }
+            catch (err) {
+                // Ignore errors
+            }
+
+            // Create new client
+            retryClient = createNewHttp2Client();
+        }
+
+        // Use retry client as client
+        client = retryClient;
+    }
+
     // Create a HTTP/2 request per device token
     let request = client.request({
         ':method': 'POST',
@@ -167,6 +196,9 @@ function sendRequest(client, device, message, projectId, accessToken, doneCallba
     // Keep track of whether we are already retrying this method invocation
     let retrying = false;
 
+    // Keep track of called args for retry mechanism
+    let args = arguments;
+
     // Define error handler
     let errorHandler = function (err) {
         // Retry up to 3 times
@@ -179,14 +211,12 @@ function sendRequest(client, device, message, projectId, accessToken, doneCallba
             // Keep track of whether we are already retrying in this context
             retrying = true;
 
-            // If HTTP2 session destroyed, open a new one
-            if (client.destroyed) {
-                // Create new HTTP/2 session just for this failed device
-                return processBatch(message, [device], projectId, accessToken).finally(doneCallback);
-            }
-
-            // Retry request using same HTTP2 session in 10 seconds
-            return setTimeout(() => { sendRequest.apply(this, args) }, 10 * 1000);
+            // Retry request using same HTTP2 session in 1 second
+            return setTimeout(() => { sendRequest.apply(this, args) }, 1 * 1000);
+        }
+        else {
+            // Log this
+            console.log(`[FCM] Can't retry request (ran out of retries): (data: ${data})`, err, data);
         }
 
         // Log response data in error
@@ -194,34 +224,14 @@ function sendRequest(client, device, message, projectId, accessToken, doneCallba
 
         // Even if request failed, mark request as completed as we've already retried 3 times
         doneCallback(err);
-    }
-
-    // Keep track of called args for retry mechanism
-    let args = arguments;
+    };
 
     // Response received in full
     request.on('end', () => {
         try {
-            // Server-side error? (may be returned as HTML, so search text explicitly before try parsing from JSON)
-            if (data.toLowerCase().includes('server error')) {
-                return errorHandler(new Error('Internal Server Error'));
-            }
-            
             // Convert response body to JSON object
             let response = JSON.parse(data);
 
-            // Extract status code from JSON response object
-            let statusCode = response.statusCode ?? response.status;
-            
-            // Status code found?
-            if (statusCode) {
-                // Server-side error?
-                if (statusCode >= 500) {
-                    // Retry request using same HTTP2 session in 10 seconds
-                    return errorHandler(new Error(statusCode + 'Internal Server Error'));
-                }
-            }
-            
             // Error?
             if (response.error) {
                 // App uninstall or invalid token?
