@@ -118,8 +118,8 @@ function processBatch(message, devices, projectId, accessToken) {
         // Create new HTTP/2 client for this batch
         var client = createNewHttp2Client();
 
-        // Use async/each to iterate over device tokens
-        async.each(devices, (device, doneCallback) => {
+        // Use async/eachLimit to iterate over device tokens
+        async.eachLimit(devices, config.maxConcurrentStreamsAllowed, (device, doneCallback) => {
             // Create a HTTP/2 request per device token
             sendRequest(client, device, message, projectId, accessToken, doneCallback, 0);
         }, (err) => {
