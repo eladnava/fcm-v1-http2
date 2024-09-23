@@ -87,21 +87,22 @@ function createNewHttp2Client() {
         peerMaxConcurrentStreams: config.maxConcurrentStreamsAllowed
     });
 
-    // Log connection errors
-    client.on('error', (err) => {
-        // Connection reset?
-        if (err.message.includes('ECONNRESET')) {
-            // Log temporary connection errors to console (retry mechanism inside sendRequest will take care of retrying)
-            return console.error('FCM HTTP2 Error', err);
-        }
-        
-        // Throw connection error
-        reject(err);
+    // Log connection goaway
+    client.on('goaway', (err) => {
+        // Log goaway
+        console.error('FCM HTTP2 GOAWAY', err);
     });
 
-    // Log socket errors
-    client.on('socketError', (err) => {
-        reject(err);
+    // Listen for connection errors
+    client.on('error', function (err) {
+        // Log temporary connection errors to console (retry mechanism inside sendRequest will take care of retrying)
+        console.error('FCM HTTP2 Error', err);
+    });
+
+    // Listen for socket errors
+    client.on('socketError', function (err) {
+        // Notify developer of socket error
+        console.error('FCM HTTP2 Socket Error', err);
     });
 
     // Keep track of unregistered device tokens
