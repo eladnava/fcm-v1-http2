@@ -240,8 +240,13 @@ function sendRequest(client, device, message, projectId, accessToken, doneCallba
                     // Add to unregistered tokens list
                     client.unregisteredTokens.push(device);
                 }
+                // 503 Service Unavailable?
+                else if (response.error.code === 503) {
+                    // Retry request
+                    return errorHandler(response.error);
+                }
                 else {
-                    // Call async done callback with error
+                    // Call async done callback with unexpected error
                     return doneCallback(response.error);
                 }
             }
