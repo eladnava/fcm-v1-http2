@@ -202,8 +202,8 @@ function sendRequest(client, device, message, projectId, accessToken, doneCallba
 
     // Define error handler
     let errorHandler = function (err) {
-        // Retry up to 3 times
-        if (tries <= 3) {
+        // Retry up to 3 times (no retry limit for FCM Service Unavailable 503 error)
+        if (tries <= 3 || (err && err.code === 503)) {
             // Avoid retrying twice for the same error
             if (retrying) {
                 return;
