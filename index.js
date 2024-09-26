@@ -90,7 +90,7 @@ function createNewHttp2Client() {
     // Log connection goaway
     client.on('goaway', (err, lastStreamId, opaqueData) => {
         // Log goaway
-        console.error('FCM HTTP2 GOAWAY', err, lastStreamId, opaqueData ? opaqueData.toString('utf-8') : null);
+        console.error('FCM HTTP2 GOAWAY', err, opaqueData ? opaqueData.toString('utf-8') : null);
     });
 
     // Listen for connection errors
