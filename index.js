@@ -203,7 +203,7 @@ function sendRequest(client, device, message, projectId, accessToken, doneCallba
     // Define error handler
     let errorHandler = function (err) {
         // Retry up to 3 times (no retry limit for FCM 5xx errors)
-        if (tries <= 3 || (err && err.code >= 500 && err.code < 600)) {
+        if (tries <= 3 || (err && err.code >= 500 && err.code < 600) || (data && data.includes('Server Error'))) {
             // Avoid retrying twice for the same error
             if (retrying) {
                 return;
@@ -215,10 +215,9 @@ function sendRequest(client, device, message, projectId, accessToken, doneCallba
             // Retry request using same HTTP2 session in 1 second
             return setTimeout(() => { sendRequest.apply(this, args) }, 1 * 1000);
         }
-        else {
-            // Log this
-            console.log(`[FCM] Can't retry request (ran out of retries): (data: ${data})`, err, data);
-        }
+        
+        // Log this
+        console.log(`[FCM] Can't retry request (ran out of retries): (data: ${data})`, err, data);
 
         // Log response data in error
         err.data = data;
