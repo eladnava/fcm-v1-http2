@@ -202,8 +202,8 @@ function sendRequest(client, device, message, projectId, accessToken, doneCallba
 
     // Define error handler
     let errorHandler = function (err) {
-        // Retry up to 3 times (no retry limit for FCM 5xx errors)
-        if (tries <= 3 || (err && err.code >= 500 && err.code < 600) || (data && data.includes('Server Error'))) {
+        // Retry up to 3 times (10 times for FCM 5xx)
+        if (tries <= 3 || (err && err.code >= 500 && err.code < 600 && tries < 10) || (data && data.includes('Server Error') && tries < 10)) {
             // Avoid retrying twice for the same error
             if (retrying) {
                 return;
